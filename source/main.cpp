@@ -2,12 +2,18 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h> 
+#include <sys/wait.h>
 
 
 #define MAX_LENGHT 100
+#define MAX_ARG_SIZE 20
 #define MAX_HISTORY 10
 const char exitCode[] = "exit";
 const char historyCode[] = "!!";
+const char pipeCode = '|';
+const char backgroundCode = '&';
+const char inputRe = '<';
+const char outputRe = '>';
 
 //Print current directory.
 void Dir(){
@@ -37,12 +43,89 @@ int input(char* str){
 //Args:
 //      char *str: inputted string
 //      char *args[]: array to get splitted args.
-//      char *argsPipe[]: array to get splitted piped args.
-//Return: 
+void splitString(char *str, char* args[], bool& backgroundCase){
+    for(int i = 0; i < MAX_ARG_SIZE; i++){
+        args[i] = NULL;
+    }
+
+    if(str[strlen(str) - 1] == backgroundCode){
+        backgroundCase = 1;
+        str[strlen(str) - 1] = '\0';
+    }
+    else
+    {
+        backgroundCase = 0;
+    }
+    
+    int idx = 0;
+    char* tok;
+    tok = strtok(str, " ");
+    while(tok != NULL){
+        args[idx] =  tok;
+        tok = strtok(NULL, " "); 
+        printf("%s ", tok);
+        idx++;
+    }
+}
+
+
+//Split inputted string in case redirecting input/ ouput.
+//Args:
+//      args: splitted string from splitString function.
+//      redirect: store file name.
+//Return:
+//      0: not a input/ ouput redirecting case.
+//      1: input redirecting case.
+//      2: output redirecting case.
+int parseRedirect(char* args[], char* redirect){
+    int idx = 0;
+    while(args[idx] != NULL){
+        if(args[idx][0] == inputRe){
+            if(args[idx + 1] != NULL){
+                redirect = args[idx + 1];
+                args[idx + 1] = NULL;
+                return 1;
+            }
+        }
+        else if(args[idx][0] == outputRe){
+            if(args[idx + 1] != NULL){
+                redirect =  args[idx + 1];
+                args[idx + 1] = NULL;
+                return 2;
+            }
+        }
+        idx++;
+    }
+    return 0;
+}
+
+//Parse string in case pipe.
+//Args:
+//      args: splitted string from splitString function.
+//      argsPipe: 3D array to store args.
+//Returns:
 //      0: normal case.
-//      1: piped case.
-bool splitString(char *str, char* args[], char* argsPipe[]){
-    return 1;
+//      1: pipe case.
+bool parsePipe(char* args[], char* argsPipe[2][MAX_ARG_SIZE]){
+    int idx = 0;
+    for(int i = 0; i < MAX_ARG_SIZE; i++){
+        argsPipe[0][i] = NULL;
+        argsPipe[1][i] = NULL;
+    }
+    while(args[idx] != NULL){
+        if(args[idx][0] == pipeCode){
+            for(int i = 0; i < idx; i++){
+                argsPipe[0][i] =  args[i];
+            }
+            for(int i = idx + 1; i < MAX_ARG_SIZE; i++){
+                if(args[i] == NULL) break;
+                argsPipe[1][i - idx - 1] = args[i];
+            }
+            return 1;
+        }
+        idx++;
+    }
+    return 0;
 }
 
 //Add inputted string to history.
@@ -89,14 +172,14 @@ void runPipedCommand(char* args[], char* argsPipe[]){
 }
 
 int main(){
-    //Array to store inputted string, args and piped args.
-    char inputStr[MAX_LENGHT], *args[MAX_LENGHT], *argsPipe[MAX_LENGHT];
+    //Array to store inputted string, args and piped args, filename
+    char inputStr[MAX_LENGHT], *args[MAX_ARG_SIZE], *argsPipe[2][MAX_ARG_SIZE], *redirect;
 
     //Flag of normal command or piped command.
-    bool flag = 0;
+    bool pipeFlag = 0, backgroundFlag = 0;
 
     //Flag of input status.
-    int inputFlag = 1; 
+    int inputFlag = 1, redirectFlag = 0;
 
     //History variable.
     int historyCount = 0;
@@ -129,15 +212,24 @@ int main(){
         }
 
         //Split inputted string into args.
-        flag = splitString(inputStr, args, argsPipe);
+        splitString(inputStr, args, backgroundFlag);
 
-        //Normal command
-        if(flag == 0)
-            runCommand(args);
-            
-        //Piped command.
-        else if(flag == 1)
-            runPipedCommand(args, argsPipe);
+        redirectFlag = parseRedirect(args, redirect);
+
+        if(redirectFlag == 0)
+            pipeFlag = parsePipe(args, argsPipe);
+
+        //pipeFlag = 1: Pipe case.
+        //PipeFlag = 0:
+        //  redirectFlag = 1: input redirecting case.
+        //  redirectFlag = 2: output redirecting case.
+        //  redirectFlag = 0: normal case.
+        //      backgroundFlag = 1: concurrent case.
+        //      backgroundFlag = 0: normal case.
+        
+        //if(pipeFlag == 1)
+            //runPipedCommand(args, argsPipe);
+        
     }
     for (int i = 0; i < historyCount; i++) 
         free(history[i]);
