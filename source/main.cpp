@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h> 
 #include <sys/wait.h>
+#include <fcntl.h> 
 
 
 #define MAX_LENGHT 100
@@ -63,7 +64,6 @@ void splitString(char *str, char* args[], bool& backgroundCase){
     while(tok != NULL){
         args[idx] =  tok;
         tok = strtok(NULL, " "); 
-        printf("%s ", tok);
         idx++;
     }
 }
@@ -77,13 +77,14 @@ void splitString(char *str, char* args[], bool& backgroundCase){
 //      0: not a input/ ouput redirecting case.
 //      1: input redirecting case.
 //      2: output redirecting case.
-int parseRedirect(char* args[], char* redirect){
+int parseRedirect(char* args[], char*& redirect){
     int idx = 0;
     while(args[idx] != NULL){
         if(args[idx][0] == inputRe){
             if(args[idx + 1] != NULL){
                 redirect = args[idx + 1];
                 args[idx + 1] = NULL;
+                args[idx] = NULL;
                 return 1;
             }
         }
@@ -91,6 +92,7 @@ int parseRedirect(char* args[], char* redirect){
             if(args[idx + 1] != NULL){
                 redirect =  args[idx + 1];
                 args[idx + 1] = NULL;
+                args[idx] = NULL;
                 return 2;
             }
         }
@@ -159,16 +161,103 @@ void historyProceed(int& historyCount, char* history[], char* inputStr){
 //Use parsed args to run normal command.
 //Args:.
 //      char* args[]: array of args to be execute.
-void runCommand(char* args[]){
-    return;
+void runCommand(char* args[], char* redirect, int redirectFlag){
+    if(redirectFlag == 1){
+        int inputFile = open(redirect, S_IRUSR);
+        if(inputFile == -1){
+            perror("File is not found");
+            exit(EXIT_FAILURE);
+
+        }
+        int _fd = dup2(inputFile, fileno(stdin));
+
+        if(close(_fd) == -1){
+            perror("Closing input file error");
+            exit(EXIT_FAILURE);
+        }
+
+        if(execvp(args[0], args) == -1){
+            perror("Command not found");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else if(redirectFlag == 2){
+        int outputFile = open("out.txt", O_CREAT|O_WRONLY, 0777);
+        if(outputFile == -1){
+            perror("File is not found");
+            exit(EXIT_FAILURE);
+        }
+        int _fd = dup2(outputFile, fileno(stdout));
+
+        if(close(_fd) == -1){
+            perror("Closing output file error");
+            exit(EXIT_FAILURE);
+        }
+
+        if(execvp(args[0], args) == -1){
+            perror("Command not found");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else{
+        if(execvp(args[0], args) == -1){
+            perror("Command not found");
+            exit(EXIT_FAILURE);
+        }
+    }
+    exit(EXIT_SUCCESS);
+
+    
 }
 
 //Use parsed args to run piped command.
 //Args:
 //      char* args[]: array of args to be execute.
 //      char* argsPipe[]: array of piped args.
-void runPipedCommand(char* args[], char* argsPipe[]){
-    return;
+void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
+    int pipefds[2];
+    //pipefds[1]: write
+    //pipefds[0]: read
+    if(pipe(pipefds) == -1){
+        perror("Pipe error");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t status = fork(), wpid;
+    if(status < 0){
+        perror("Fork error");
+        exit(EXIT_FAILURE);
+    }
+    else if(status == 0){
+        dup2(pipefds[1], fileno(stdout));
+        if(execvp(argsPipe[0][0], argsPipe[0]) == -1){
+            perror("Fail to run first command");
+            exit(EXIT_FAILURE);
+        }
+        close(pipefds[0]);
+        close(pipefds[1]);
+    }
+
+    status = fork();
+    if(status < 0){
+        perror("Fork error");
+        exit(EXIT_FAILURE);
+    }
+    else if(status == 0){
+        dup2(pipefds[0], fileno(stdin));
+        if(execvp(argsPipe[1][0], argsPipe[1]) == -1){
+            perror("Fail to run second command");
+            exit(EXIT_FAILURE);
+        }
+        close(pipefds[0]);
+        close(pipefds[1]);
+    }
+
+    close(pipefds[0]);
+    close(pipefds[1]);
+    
+    //Wait for all child process to terminate.
+    while ((wpid = wait(&status)) > 0);
 }
 
 int main(){
@@ -227,8 +316,22 @@ int main(){
         //      backgroundFlag = 1: concurrent case.
         //      backgroundFlag = 0: normal case.
         
-        //if(pipeFlag == 1)
-            //runPipedCommand(args, argsPipe);
+        if(pipeFlag == 1)
+            runPipedCommand(argsPipe);
+        else{
+            pid_t status = fork();
+            if(status == -1){
+                perror("Fork error");
+                exit(EXIT_FAILURE);
+            }
+            else if(status == 0){
+                runCommand(args, redirect, redirectFlag);
+            }
+            else{
+                if(backgroundFlag == 0)
+                    wait(0);
+            }
+        }
         
     }
     for (int i = 0; i < historyCount; i++) 
