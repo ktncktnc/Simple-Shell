@@ -163,10 +163,10 @@ void addHistory(int& historyCount, char* history[], char* str){
 //      int& historyCount: number of history
 //      char* history[]: array to store history commands.
 //      char* inputStr: var to be assigned history string.
-void historyProceed(int& historyCount, char* history[], char* inputStr){
-    inputStr = history[historyCount-1];
+void historyProceed(int& historyCount, char* history[], char inputStr[]){
+    strcpy(inputStr, history[historyCount-1]);
     Dir();
-    printf("%s", inputStr);
+    printf("%s\n", inputStr);
 }
 
 //Use parsed args to run normal command.
@@ -182,10 +182,11 @@ void runCommand(char* args[], char* redirect, int redirectFlag){
         }
         int _fd = dup2(inputFile, fileno(stdin));
 
-        if(close(_fd) == -1){
+        if(close(inputFile) == -1){
             perror("Closing input file error");
             exit(EXIT_FAILURE);
         }
+
     }
     else if(redirectFlag == 2){
         int outputFile = open(redirect,  O_WRONLY| O_APPEND );
@@ -226,19 +227,19 @@ void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
         exit(EXIT_FAILURE);
     }
 
-    pid_t status = fork(), wpid;
+    pid_t status = fork(), pid;
     if(status < 0){
         perror("Fork error");
         exit(EXIT_FAILURE);
     }
     else if(status == 0){
         dup2(pipefds[1], fileno(stdout));
+        close(pipefds[0]);
+        close(pipefds[1]);
         if(execvp(argsPipe[0][0], argsPipe[0]) == -1){
             perror("Fail to run first command");
             exit(EXIT_FAILURE);
         }
-        close(pipefds[0]);
-        close(pipefds[1]);
     }
 
     status = fork();
@@ -248,19 +249,20 @@ void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
     }
     else if(status == 0){
         dup2(pipefds[0], fileno(stdin));
+        close(pipefds[0]);
+        close(pipefds[1]);
         if(execvp(argsPipe[1][0], argsPipe[1]) == -1){
             perror("Fail to run second command");
             exit(EXIT_FAILURE);
         }
-        close(pipefds[0]);
-        close(pipefds[1]);
     }
 
     close(pipefds[0]);
     close(pipefds[1]);
     
     //Wait for all child process to terminate.
-    while ((wpid = wait(&status)) > 0);
+    wait(0);
+    wait(0);
 }
 
 int main(){
@@ -307,6 +309,7 @@ int main(){
         splitString(inputStr, args, backgroundFlag);
 
         redirectFlag = parseRedirect(args, redirect);
+        pipeFlag = 0;
 
         if(redirectFlag == 0)
             pipeFlag = parsePipe(args, argsPipe);
