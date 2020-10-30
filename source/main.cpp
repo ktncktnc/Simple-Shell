@@ -4,7 +4,7 @@
 #include <stdlib.h> 
 #include <sys/wait.h>
 #include <fcntl.h> 
-
+#include <time.h>
 
 #define MAX_LENGHT 100
 #define MAX_ARG_SIZE 20
@@ -20,6 +20,17 @@ const char outputRe = '>';
 void Dir(){
     printf("osh>");
     return;
+}
+
+//Get current time in format: mm/hh/DD/MM/YY
+char *getTime(){
+    time_t my_time;
+    struct tm * timeinfo; 
+    time (&my_time);
+    timeinfo = localtime (&my_time);
+    char * output;
+    sprintf(output, "%d:%d - %d/%d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_mday, timeinfo->tm_mon + 1);
+    return output;
 }
 
 //Get input from stdin
@@ -175,35 +186,27 @@ void runCommand(char* args[], char* redirect, int redirectFlag){
             perror("Closing input file error");
             exit(EXIT_FAILURE);
         }
-
-        if(execvp(args[0], args) == -1){
-            perror("Command not found");
-            exit(EXIT_FAILURE);
-        }
     }
     else if(redirectFlag == 2){
-        int outputFile = open("out.txt", O_CREAT|O_WRONLY, 0777);
+        int outputFile = open(redirect,  O_WRONLY| O_APPEND );
         if(outputFile == -1){
-            perror("File is not found");
-            exit(EXIT_FAILURE);
+            outputFile = creat(redirect, S_IRWXU);
+            if(outputFile == -1){
+                perror("File is not found");
+                exit(EXIT_FAILURE);
+            }
         }
-        int _fd = dup2(outputFile, fileno(stdout));
-
-        if(close(_fd) == -1){
+        dup2(outputFile, fileno(stdout));
+        printf("\nRunning command %s at %s\n", args[0], getTime());
+       
+        if(close(outputFile) == -1){
             perror("Closing output file error");
             exit(EXIT_FAILURE);
         }
-
-        if(execvp(args[0], args) == -1){
-            perror("Command not found");
-            exit(EXIT_FAILURE);
-        }
     }
-    else{
-        if(execvp(args[0], args) == -1){
-            perror("Command not found");
-            exit(EXIT_FAILURE);
-        }
+    if(execvp(args[0], args) == -1){
+        perror("Command not found");
+        exit(EXIT_FAILURE);
     }
     exit(EXIT_SUCCESS);
 
