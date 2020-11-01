@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include <fcntl.h> 
 #include <time.h>
+#include <iostream>
 
 #define MAX_LENGHT 100
 #define MAX_ARG_SIZE 20
@@ -55,7 +56,7 @@ int input(char* str){
 //Args:
 //      char *str: inputted string
 //      char *args[]: array to get splitted args.
-void splitString(char *str, char* args[], bool& backgroundCase){
+void parseArgsCommand(char *str, char* args[], bool& backgroundCase){
     for(int i = 0; i < MAX_ARG_SIZE; i++){
         args[i] = NULL;
     }
@@ -82,7 +83,7 @@ void splitString(char *str, char* args[], bool& backgroundCase){
 
 //Split inputted string in case redirecting input/ ouput.
 //Args:
-//      args: splitted string from splitString function.
+//      args: splitted string from parseArgsCommand function.
 //      redirect: store file name.
 //Return:
 //      0: not a input/ ouput redirecting case.
@@ -114,8 +115,9 @@ int parseRedirect(char* args[], char*& redirect){
 
 //Parse string in case pipe.
 //Args:
-//      args: splitted string from splitString function.
-//      argsPipe: 3D array to store args.
+//      args: splitted string from parseArgsCommand function.
+//      argsPipe[0]: store args before pipeCode(|).
+//      argsPipe[1]: store args after pipeCode(|).
 //Returns:
 //      0: normal case.
 //      1: pipe case.
@@ -216,13 +218,19 @@ void runCommand(char* args[], char* redirect, int redirectFlag){
 
 //Use parsed args to run piped command.
 //Args:
-//      char* args[]: array of args to be execute.
+//      char* args[]: array of args to be execute.  
 //      char* argsPipe[]: array of piped args.
 void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
     int pipefds[2];
     //pipefds[1]: write
     //pipefds[0]: read
     if(pipe(pipefds) == -1){
+        /*
+            Pipe parameters :
+            fd[0] will be the fd(file descriptor) for the read end of pipe.
+            fd[1] will be the fd for the write end of pipe.
+            Returns : 0 on Success and -1 on error.
+        */
         perror("Pipe error");
         exit(EXIT_FAILURE);
     }
@@ -233,9 +241,16 @@ void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
         exit(EXIT_FAILURE);
     }
     else if(status == 0){
+        /* 
+            dup2(pipefds[1], fileno(stdout));
+           All the printf statements will be written in the file pipefds[1]
+        */
         dup2(pipefds[1], fileno(stdout));
         close(pipefds[0]);
         close(pipefds[1]);
+        /*
+            execvp: execute argsPipe[0] 
+        */
         if(execvp(argsPipe[0][0], argsPipe[0]) == -1){
             perror("Fail to run first command");
             exit(EXIT_FAILURE);
@@ -261,8 +276,8 @@ void runPipedCommand(char* argsPipe[2][MAX_ARG_SIZE]){
     close(pipefds[1]);
     
     //Wait for all child process to terminate.
-    wait(0);
-    wait(0);
+    wait(NULL);
+    wait(NULL);
 }
 
 int main(){
@@ -296,7 +311,10 @@ int main(){
         else if(inputFlag == -1) break;
 
         if(!strcmp(inputStr, historyCode)){
-            if(historyCount == 0) continue;
+            if(historyCount == 0) {
+                std::cerr << "No commands in history\n";
+                continue;
+            }
             else{
                 historyProceed(historyCount, history, inputStr);
             }
@@ -306,9 +324,12 @@ int main(){
         }
 
         //Split inputted string into args.
-        splitString(inputStr, args, backgroundFlag);
+        parseArgsCommand(inputStr, args, backgroundFlag);
 
-        redirectFlag = parseRedirect(args, redirect);
+        redirectFlag = parseRedirect(args, redirect); 
+        //redirectFlag = 1: input
+        //redirectFlag = 2: output
+        //redirectFlag = 0: not in 1 and 2
         pipeFlag = 0;
 
         if(redirectFlag == 0)
