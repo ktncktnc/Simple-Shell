@@ -23,7 +23,7 @@ void Dir(){
     return;
 }
 
-//Get current time in format: mm/hh/DD/MM/YY
+//Get current time in format: min/hour - date/month
 char *getTime(){
     time_t my_time;
     struct tm * timeinfo; 
@@ -346,17 +346,19 @@ int main(){
         if(pipeFlag == 1)
             runPipedCommand(argsPipe);
         else{
-            pid_t status = fork();
-            if(status == -1){
+            pid_t curPid = fork();
+            if(curPid == -1){
                 perror("Fork error");
                 exit(EXIT_FAILURE);
             }
-            else if(status == 0){
+            else if(curPid == 0){
                 runCommand(args, redirect, redirectFlag);
             }
             else{
-                if(backgroundFlag == 0)
-                    wait(0);
+                if(backgroundFlag == 0){
+                    int stat_loc;
+                    waitpid(curPid, &stat_loc, 0);
+                }
             }
         }
         
